@@ -38,17 +38,28 @@ export default function QuestionScreen() {
     [level, state.domain],
   );
 
-  const [idx, setIdx] = useState(0);
+  const currentRun = state.currentRun?.levelId === level.id ? state.currentRun : undefined;
+  const [idx, setIdx] = useState(currentRun?.idx ?? 0);
   const [selected, setSelected] = useState<AnswerOption | null>(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
-  const [correctCount, setCorrectCount] = useState(0);
-  const [mistakeCount, setMistakeCount] = useState(0);
+  const [correctCount, setCorrectCount] = useState(currentRun?.correctCount ?? 0);
+  const [mistakeCount, setMistakeCount] = useState(currentRun?.mistakeCount ?? 0);
 
-  // Reset hearts when entering a new level
+  // Reset hearts only when starting a fresh run.
   useEffect(() => {
-    store.resetHearts();
+    if (state.currentRun?.levelId !== level.id) {
+      store.resetHearts();
+    }
     startTimeRef.current = Date.now();
   }, [levelId]);
+
+  useEffect(() => {
+    if (currentRun) {
+      setIdx(currentRun.idx);
+      setCorrectCount(currentRun.correctCount);
+      setMistakeCount(currentRun.mistakeCount);
+    }
+  }, [currentRun]);
 
   if (!questions.length) {
     return (
@@ -76,11 +87,30 @@ export default function QuestionScreen() {
 
   const handleCheck = () => {
     if (!selected) return;
-    if (selected.id === q.correctId) {
-      setCorrectCount((c) => c + 1);
-    } else {
-      setMistakeCount((m) => m + 1);
+
+    const isCorrect = selected.id === q.correctId;
+    const nextCorrect = isCorrect ? correctCount + 1 : correctCount;
+    const nextMistakes = isCorrect ? mistakeCount : mistakeCount + 1;
+    const nextIdx = idx + 1;
+
+    if (!isCorrect) {
       store.decrementHeart();
+    }
+
+    if (nextIdx < total) {
+      store.setCurrentRun({
+        levelId: level.id,
+        idx: nextIdx,
+        correctCount: nextCorrect,
+        mistakeCount: nextMistakes,
+      });
+      store.setLevelProgress(level.id, Math.round((nextIdx / total) * 100));
+    }
+
+    if (isCorrect) {
+      setCorrectCount(nextCorrect);
+    } else {
+      setMistakeCount(nextMistakes);
     }
     setFeedbackOpen(true);
   };
@@ -99,7 +129,7 @@ export default function QuestionScreen() {
     }
 
     if (idx + 1 >= total) {
-      finalizeRun(correctCount + (selected?.id === q.correctId ? 0 : 0));
+      finalizeRun(correctCount);
       router.replace({
         pathname: '/complete',
         params: { levelId: String(level.id) },
