@@ -1,13 +1,16 @@
 import { router } from 'expo-router';
+import { useState } from 'react';
 import {
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Palette } from '@/constants/data';
+import { store, useAppState } from '@/constants/store';
 
 /**
  * Screen 01 — Landing
@@ -15,6 +18,17 @@ import { Palette } from '@/constants/data';
  * wordmark, a tagline, and Sign in / Log in CTAs.
  */
 export default function LandingScreen() {
+  const state = useAppState();
+  const [username, setUsername] = useState(state.username ?? '');
+  const [touched, setTouched] = useState(false);
+
+  const handleContinue = () => {
+    setTouched(true);
+    if (!username.trim()) return;
+    store.setUsername(username.trim());
+    router.push('/onboarding');
+  };
+
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <View style={styles.bgBase} />
@@ -32,22 +46,43 @@ export default function LandingScreen() {
         </View>
 
         <Text style={styles.brand}>Career{'\n'}Navigators</Text>
-        <Text style={styles.tagline}>Level up your interview game 🚀</Text>
+        <Text style={styles.tagline}>Introduce-ți username-ul pentru a salva progresul.</Text>
 
         <View style={styles.actions}>
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Username</Text>
+            <TextInput
+              style={[styles.input, touched && !username.trim() && styles.inputError]}
+              placeholder="e.g. alex.popescu"
+              placeholderTextColor="rgba(255,255,255,0.55)"
+              value={username}
+              onChangeText={setUsername}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {touched && !username.trim() && (
+              <Text style={styles.errorText}>Te rog introdu un nume de utilizator.</Text>
+            )}
+          </View>
+
           <Pressable
-            style={({ pressed }) => [styles.primaryBtn, pressed && styles.pressed]}
-            onPress={() => router.push('/onboarding')}>
-            <Text style={styles.primaryBtnText}>GET STARTED — IT&apos;S FREE</Text>
+            style={({ pressed }) => [
+              styles.primaryBtn,
+              pressed && styles.pressed,
+              !username.trim() && styles.disabledBtn,
+            ]}
+            onPress={handleContinue}
+            disabled={!username.trim()}>
+            <Text style={styles.primaryBtnText}>CONTINUĂ</Text>
           </Pressable>
 
           <Pressable
             style={({ pressed }) => [styles.secondaryBtn, pressed && styles.pressed]}
             onPress={() => router.push('/levels')}>
-            <Text style={styles.secondaryBtnText}>I ALREADY HAVE AN ACCOUNT</Text>
+            <Text style={styles.secondaryBtnText}>Continuă cu progresul existent</Text>
           </Pressable>
 
-          <Text style={styles.footer}>Join 50,000+ students preparing smarter</Text>
+          <Text style={styles.footer}>Username-ul tău păstrează progresul în baza de date.</Text>
         </View>
       </View>
     </SafeAreaView>
@@ -162,6 +197,32 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   actions: { width: '100%', alignItems: 'center' },
+  inputGroup: { width: '100%', gap: 8, marginBottom: 16 },
+  inputLabel: {
+    color: '#FFF',
+    fontSize: 13,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  input: {
+    width: '100%',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    color: '#FFF',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  inputError: {
+    borderColor: '#FF7A7A',
+  },
+  errorText: {
+    color: '#FFB3B3',
+    fontSize: 11,
+    marginTop: 6,
+  },
   primaryBtn: {
     width: '100%',
     backgroundColor: Palette.primary,
@@ -173,6 +234,9 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 6 },
     elevation: 8,
+  },
+  disabledBtn: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
   },
   primaryBtnText: {
     color: '#FFFFFF',

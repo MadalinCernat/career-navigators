@@ -18,6 +18,7 @@ export type LevelProgress = {
 };
 
 type AppState = {
+  username?: string;
   domain: Domain;
   xp: number;
   streakDays: number;
@@ -42,18 +43,81 @@ type AppState = {
   };
 };
 
-const STORAGE_USER_ID = 'career-navigators:userId';
-const STORAGE_APP_STATE = 'career-navigators:appState';
+const STORAGE_USERNAME = 'career-navigators:username';
+const STORAGE_FALLBACK_USER_ID = 'career-navigators:userId';
+
+function storageAppStateKey(userKey: string) {
+  return `career-navigators:appState:${userKey}`;
+}
+
+function normalizeUsername(username: string) {
+  return username
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+async function getStoredUsername(): Promise<string | null> {
+  try {
+    const stored = await AsyncStorage.getItem(STORAGE_USERNAME);
+    return stored?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+async function getOrCreateFallbackUserId(): Promise<string> {
+  try {
+    const existingId = await AsyncStorage.getItem(STORAGE_FALLBACK_USER_ID);
+    if (existingId) {
+      return existingId;
+    }
+  } catch {
+    // Ignore storage issues and fall back to generated ID.
+  }
+
+  const newId = `user-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  try {
+    await AsyncStorage.setItem(STORAGE_FALLBACK_USER_ID, newId);
+  } catch {
+    // best effort only
+  }
+  return newId;
+}
+
+async function getUserKey(): Promise<string> {
+  const username = state.username?.trim() || (await getStoredUsername());
+  if (username) {
+    return normalizeUsername(username);
+  }
+  return await getOrCreateFallbackUserId();
+}
+
+function resetStateForNewUser(username?: string) {
+  Object.assign(state, {
+    username,
+    domain: DEFAULT_STATE.domain,
+    xp: DEFAULT_STATE.xp,
+    streakDays: DEFAULT_STATE.streakDays,
+    hearts: DEFAULT_STATE.hearts,
+    progress: { ...DEFAULT_STATE.progress },
+    lastRun: undefined,
+    currentRun: undefined,
+  });
+  emit();
+}
 
 const DEFAULT_STATE: AppState = {
   domain: 'marketing',
-  xp: 480,
-  streakDays: 7,
+  xp: 0,
+  streakDays: 0,
   hearts: 3,
   progress: {
-    1: { stars: 3, completed: true, progressPct: 100 },
-    2: { stars: 3, completed: true, progressPct: 100 },
-    3: { stars: 0, completed: false, progressPct: 40 },
+    1: { stars: 0, completed: false, progressPct: 0 },
+    2: { stars: 0, completed: false, progressPct: 0 },
+    3: { stars: 0, completed: false, progressPct: 0 },
     4: { stars: 0, completed: false, progressPct: 0 },
     5: { stars: 0, completed: false, progressPct: 0 },
   },
@@ -68,6 +132,7 @@ function emit() {
 
 function mergeState(loaded: Partial<AppState>): AppState {
   return {
+    username: loaded.username,
     domain: loaded.domain ?? DEFAULT_STATE.domain,
     xp: loaded.xp ?? DEFAULT_STATE.xp,
     streakDays: loaded.streakDays ?? DEFAULT_STATE.streakDays,
@@ -81,28 +146,10 @@ function mergeState(loaded: Partial<AppState>): AppState {
   };
 }
 
-async function getOrCreateUserId(): Promise<string> {
-  try {
-    const existingId = await AsyncStorage.getItem(STORAGE_USER_ID);
-    if (existingId) {
-      return existingId;
-    }
-  } catch {
-    // Ignore storage issues and fall back to generated ID.
-  }
-
-  const newId = `user-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-  try {
-    await AsyncStorage.setItem(STORAGE_USER_ID, newId);
-  } catch {
-    // best effort only
-  }
-  return newId;
-}
-
 async function saveLocalState() {
   try {
-    await AsyncStorage.setItem(STORAGE_APP_STATE, JSON.stringify(state));
+    const userKey = await getUserKey();
+    await AsyncStorage.setItem(storageAppStateKey(userKey), JSON.stringify(state));
   } catch {
     // silent local fallback failure
   }
@@ -110,8 +157,8 @@ async function saveLocalState() {
 
 async function saveRemoteState() {
   try {
-    const userId = await getOrCreateUserId();
-    const docRef = doc(db, 'users', userId);
+    const userKey = await getUserKey();
+    const docRef = doc(db, 'users', userKey);
     await setDoc(docRef, state, { merge: true });
   } catch {
     // Ignore remote persistence failures; local fallback still works.
@@ -124,10 +171,18 @@ async function persistState() {
 
 async function loadSavedState() {
   try {
-    const rawLocal = await AsyncStorage.getItem(STORAGE_APP_STATE);
+    const username = state.username?.trim() || (await getStoredUsername());
+    if (username) {
+      state.username = username;
+    }
+    const userKey = await getUserKey();
+    const rawLocal = await AsyncStorage.getItem(storageAppStateKey(userKey));
     if (rawLocal) {
       const parsed = JSON.parse(rawLocal) as Partial<AppState>;
       Object.assign(state, mergeState(parsed));
+      if (parsed.username) {
+        state.username = parsed.username;
+      }
       emit();
     }
   } catch {
@@ -135,12 +190,35 @@ async function loadSavedState() {
   }
 
   try {
-    const userId = await getOrCreateUserId();
-    const docRef = doc(db, 'users', userId);
+    const userKey = await getUserKey();
+    const docRef = doc(db, 'users', userKey);
     const snapshot = await getDoc(docRef);
     if (snapshot.exists()) {
       const remoteState = snapshot.data() as Partial<AppState>;
       Object.assign(state, mergeState(remoteState));
+      if (remoteState.username) {
+        state.username = remoteState.username;
+      }
+      emit();
+    } else {
+      await setDoc(docRef, state, { merge: true });
+    }
+  } catch {
+    // ignore remote load issues; local state is enough for now
+  }
+}
+
+async function loadRemoteStateForUsername(username: string) {
+  try {
+    resetStateForNewUser(username);
+    const docRef = doc(db, 'users', normalizeUsername(username));
+    const snapshot = await getDoc(docRef);
+    if (snapshot.exists()) {
+      const remoteState = snapshot.data() as Partial<AppState>;
+      Object.assign(state, mergeState(remoteState));
+      if (remoteState.username) {
+        state.username = remoteState.username;
+      }
       emit();
     } else {
       await setDoc(docRef, state, { merge: true });
@@ -155,6 +233,18 @@ void loadSavedState();
 export const store = {
   getState(): AppState {
     return state;
+  },
+  setUsername(username: string) {
+    const trimmed = username.trim();
+    if (!trimmed) return;
+    resetStateForNewUser(trimmed);
+
+    void AsyncStorage.setItem(STORAGE_USERNAME, trimmed).catch(() => {
+      // best effort only
+    });
+
+    void loadRemoteStateForUsername(trimmed);
+    void persistState();
   },
   setDomain(domain: Domain) {
     state.domain = domain;

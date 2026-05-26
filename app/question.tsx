@@ -44,6 +44,13 @@ export default function QuestionScreen() {
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [correctCount, setCorrectCount] = useState(currentRun?.correctCount ?? 0);
   const [mistakeCount, setMistakeCount] = useState(currentRun?.mistakeCount ?? 0);
+  const [isHandlingNext, setIsHandlingNext] = useState(false);
+  const pendingRunRef = useRef<{
+    levelId: number;
+    idx: number;
+    correctCount: number;
+    mistakeCount: number;
+  } | null>(null);
 
   // Reset hearts only when starting a fresh run.
   useEffect(() => {
@@ -98,12 +105,12 @@ export default function QuestionScreen() {
     }
 
     if (nextIdx < total) {
-      store.setCurrentRun({
+      pendingRunRef.current = {
         levelId: level.id,
         idx: nextIdx,
         correctCount: nextCorrect,
         mistakeCount: nextMistakes,
-      });
+      };
       store.setLevelProgress(level.id, Math.round((nextIdx / total) * 100));
     }
 
@@ -116,6 +123,8 @@ export default function QuestionScreen() {
   };
 
   const handleNext = () => {
+    if (isHandlingNext) return;
+    setIsHandlingNext(true);
     setFeedbackOpen(false);
     setSelected(null);
 
@@ -134,9 +143,16 @@ export default function QuestionScreen() {
         pathname: '/complete',
         params: { levelId: String(level.id) },
       });
-    } else {
-      setIdx((i) => i + 1);
+      return;
     }
+
+    if (pendingRunRef.current) {
+      store.setCurrentRun(pendingRunRef.current);
+      pendingRunRef.current = null;
+    }
+
+    setIdx((i) => i + 1);
+    setIsHandlingNext(false);
   };
 
   const finalizeRun = (extra: number) => {
@@ -274,13 +290,14 @@ export default function QuestionScreen() {
               </View>
             )}
             <Pressable
+              disabled={isHandlingNext}
               onPress={handleNext}
               style={({ pressed }) => [
                 styles.modalBtn,
                 {
                   backgroundColor: isCorrect ? Palette.primary : Palette.danger,
                 },
-                pressed && { opacity: 0.9 },
+                (pressed || isHandlingNext) && { opacity: 0.9 },
               ]}>
               <Text style={styles.modalBtnText}>
                 {idx + 1 >= total ? 'TERMINĂ NIVELUL' : 'CONTINUĂ'}

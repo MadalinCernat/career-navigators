@@ -88,6 +88,10 @@ export default function LevelMapScreen() {
                   progressPct={prog?.progressPct ?? 0}
                   onPress={() => {
                     if (status === 'locked') return;
+                    if (level.id === 5) {
+                      router.push('/level5');
+                      return;
+                    }
                     if (status === 'done') {
                       router.push({
                         pathname: '/question',
@@ -120,12 +124,16 @@ export default function LevelMapScreen() {
         <View style={styles.footer}>
           <Pressable
             style={({ pressed }) => [styles.cta, pressed && { opacity: 0.9 }]}
-            onPress={() =>
+            onPress={() => {
+              if (activeLevel.id === 5) {
+                router.push('/level5');
+                return;
+              }
               router.push({
                 pathname: '/question',
                 params: { levelId: String(activeLevel.id) },
-              })
-            }>
+              });
+            }}>
             <Text style={styles.ctaIcon}>▶</Text>
             <Text style={styles.ctaText}>
               {state.progress[activeLevel.id]?.progressPct

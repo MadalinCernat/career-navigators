@@ -1,6 +1,9 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useState } from 'react';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 
 import { LEVELS, Palette } from '@/constants/data';
 import { useAppState } from '@/constants/store';
@@ -23,6 +26,64 @@ export default function LevelCompleteScreen() {
   const minutes = Math.floor(run.elapsedSeconds / 60);
   const seconds = run.elapsedSeconds % 60;
   const timeText = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  const [isDownloading, setIsDownloading] = useState(false);
+  const username = state.username?.trim() || 'Student';
+  const earnedDiploma = run.correct === run.total;
+
+  const diplomaHtml = () => `
+    <html>
+      <head>
+        <style>
+          body { font-family: sans-serif; background: #f7fafc; color: #102a43; padding: 48px; }
+          .card { border: 8px solid #094c7f; border-radius: 28px; padding: 40px; background: #fff; text-align: center; }
+          .title { font-size: 34px; font-weight: 800; margin-bottom: 20px; }
+          .subtitle { font-size: 18px; color: #3e5c76; margin-bottom: 32px; }
+          .name { font-size: 28px; font-weight: 700; margin: 18px 0; }
+          .detail { font-size: 16px; margin: 8px 0; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <div class="title">Diploma de Merit</div>
+          <div class="subtitle">Career Navigators</div>
+          <div class="detail">Pentru performanță perfectă în nivelul ${level.id}: ${level.title}</div>
+          <div class="name">${username}</div>
+          <div class="detail">Scor: ${run.correct}/${run.total}</div>
+          <div class="detail">Timp: ${timeText}</div>
+          <div class="detail">Data: ${new Date().toLocaleDateString()}</div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  const handleDownloadDiploma = async () => {
+    if (!earnedDiploma) return;
+    setIsDownloading(true);
+    try {
+      const html = diplomaHtml();
+      const { uri } = await Print.printToFileAsync({ html });
+      if (Platform.OS === 'web') {
+        const link = document.createElement('a');
+        link.href = uri;
+        link.download = `diploma-${username.replace(/\s+/g, '-')}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } else if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, {
+          mimeType: 'application/pdf',
+          dialogTitle: 'Descarcă diploma',
+          UTI: 'com.adobe.pdf',
+        });
+      } else {
+        Alert.alert('Diploma', 'PDF salvat la: ' + uri);
+      }
+    } catch (error) {
+      Alert.alert('Eroare', 'Diploma nu a putut fi generată.');
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -73,6 +134,21 @@ export default function LevelCompleteScreen() {
           }>
           <Text style={styles.ctaText}>Continue to Review Quiz →</Text>
         </Pressable>
+
+        {earnedDiploma && (
+          <Pressable
+            style={({ pressed }) => [
+              styles.diplomaBtn,
+              pressed && { opacity: 0.9 },
+              isDownloading && styles.ctaDisabled,
+            ]}
+            onPress={handleDownloadDiploma}
+            disabled={isDownloading}>
+            <Text style={styles.diplomaBtnText}>
+              {isDownloading ? 'Se pregătește diploma...' : 'Descarcă diploma PDF'}
+            </Text>
+          </Pressable>
+        )}
 
         <Pressable
           onPress={() => router.replace('/levels')}
@@ -198,6 +274,19 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   ctaText: { color: '#fff', fontWeight: '800', fontSize: 15, letterSpacing: 0.4 },
+  diplomaBtn: {
+    width: '100%',
+    marginTop: 16,
+    backgroundColor: '#1F6F8B',
+    paddingVertical: 16,
+    borderRadius: 16,
+    alignItems: 'center',
+  },
+  diplomaBtnText: {
+    color: '#fff',
+    fontWeight: '800',
+    fontSize: 14,
+  },
   skip: { marginTop: 12, padding: 10 },
   skipText: { color: 'rgba(255,255,255,0.55)', fontSize: 12 },
   confetti: { position: 'absolute' },
